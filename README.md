@@ -1,365 +1,501 @@
-README — Pipeline de traitement des données
-Validation d'un bandeau 3D imprimé comme référence crânienne pour la capture du mouvement facial
-Ce dépôt contient le code de traitement des données utilisé dans l'article :
+# Validation of a 3D-printed headband as a cranial reference for facial motion capture
 
-Marcellin F, Rodriguez E, Raoult M, Le Moing AG, Colin E, Sarhan FR, Dakpé S. Comparative noise characterization of a 3D-printed headband and a maxillary dental splint as cranial references for marker-based facial motion capture.
+## 1. Overview
 
-Le pipeline compare deux systèmes de référence crânienne utilisés en capture de mouvement facial : une gouttière dentaire maxillaire (dental splint) et un bandeau 3D imprimé (headband). Il produit toutes les figures et tous les tableaux de l'article, ainsi que le manuscrit Word final.
+This repository contains the Python pipeline used to compare two cranial reference systems for marker-based facial motion capture:
 
-1. Structure du dépôt
-text
-.
-├── comparaison_repere.py         # Pipeline principal (V7)
-├── README.md                     # Ce fichier
+- **Dental splint (G):** a maxillary dental splint equipped with three retroreflective markers.
+- **Headband (D):** a 3D-printed headband equipped with three retroreflective markers.
+
+The objective is to investigate whether the 3D-printed headband can provide a reliable alternative to the maxillary dental splint for the analysis of facial kinematics.
+
+The comparison focuses on:
+
+1. Geometric configuration and rigidity of each reference system.
+2. Relative translation and rotation between the two reference systems during facial movements.
+3. Agreement between facial kinematic measurements expressed in each reference frame.
+4. Residual kinematic variability in markers classified as non-moving.
+5. Sensitivity of the results to filtering parameters.
+6. A complementary skin-based reference analysis.
+
+The pipeline processes synchronized Vicon recordings and generates quantitative results, CSV tables and figures for further statistical analysis and scientific reporting.
+
+**Current pipeline version: V11**
+
+## 2. Repository contents
+
+```text
+Validation_diademe/
 │
-├── DATA/                         # (non inclus dans le dépôt)
-│   ├── gouttiere/                # Fichiers Vicon du dental splint (*_G_*)
-│   └── diademe/                  # Fichiers Vicon du headband (*_D_*)
+├── README.md
 │
-└── RESULTATS/                    # (généré par le pipeline)
-    └── RESULTATS_COMPARAISON_V9_FIXED TRESHOLD 2.5/
-        ├── 01_Marqueurs_Comparaison.csv
-        ├── 02_Diademe_Stabilite.csv
-        ├── ...
-        ├── Fig_BlandAltman_ROM.png
-        ├── Fig14_Rigidity_Diagnostics.png
-        ├── ...
-2. Prérequis
-2.1. Environnement Python
-Python ≥ 3.9
-
-Dépendances principales :
-
-text
-numpy >= 1.21
-pandas >= 1.3
-scipy >= 1.7
-matplotlib >= 3.4
-seaborn >= 0.11
-statsmodels >= 0.13     # pour Bland-Altman à effets mixtes
-python-docx >= 0.8      # pour la génération du Word
-Installe-les avec :
-
-bash
-pip install numpy pandas scipy matplotlib seaborn statsmodels python-docx
-2.2. Données d'entrée
-Les fichiers CSV doivent être exportés depuis Vicon Nexus au format standard :
-
-Ligne 1 : commentaire / en-tête Vicon
-
-Ligne 2 : fréquence d'acquisition (ex. 100.0)
-
-Ligne 3 : noms des marqueurs (format X:Nom, Y:Nom, Z:Nom répété)
-
-Lignes 4+ : données numériques, trois colonnes par marqueur (X, Y, Z)
-
-Le pipeline attend deux répertoires :
-
-DATA/gouttiere/ : fichiers *_G_*.csv (dental splint)
-
-DATA/diademe/ : fichiers *_D_*.csv (headband)
-
-Convention de nommage : chaque fichier doit contenir _G_ (splint) ou _D_ (headband) pour permettre l'appariement automatique. Exemple :
-
-text
-20230614_G_SMA_M1.csv    → splint, sujet SMA, mouvement M1
-20230614_D_SMA_M1.csv    → headband, sujet SMA, mouvement M1
-Les trois marqueurs de référence doivent être nommés M1, M2, M3 dans tous les fichiers. Les 105 marqueurs faciaux peuvent avoir n'importe quel nom, mais doivent être cohérents entre les fichiers splint et headband.
-
-2.3. Structure attendue des fichiers
-Marqueurs de référence : M1, M2, M3 (obligatoire)
-
-Marqueurs faciaux : 105 marqueurs (F1–F7, S1–S10, N1–N4, Z1–Z11, Lc2, Lc5, Pps01, Pps02, etc. — voir le schéma de numérotation dans le dépôt)
-
-Synchronisation : les deux flux sont acquis par le même système Vicon, donc frame à frame, sans recalage temporel nécessaire.
-
-3. Configuration
-Toute la configuration se fait en tête du fichier comparaison_repere.py, dans la section CONFIGURATION. Les paramètres sont regroupés par thème.
-
-3.1. Chemins
-python
-DIR_G = Path(r"...\DATA\gouttiere\tous fichiers gouttiere")
-DIR_D = Path(r"...\DATA\diademe\tous fichiers Diademe")
-OUT   = Path(r"...\RESULTATS\RESULTATS_COMPARAISON_V9_FIXED TRESHOLD 2.5")
-Adapte ces chemins à ta machine avant de lancer le pipeline.
-
-3.2. Marqueurs de référence
-python
-REF_POINTS = ["M1", "M2", "M3"]
-3.3. Marqueurs mobiles par mouvement
-python
-MOVING_MARKERS = {
-    "M1": ["Lc2", "Lc5", "Pps01", "Pps02"],   # fermeture simple des paupières
-}
-Pour les mouvements non listés, tous les marqueurs sont considérés comme « moving ». Adapte ce dictionnaire à ta nomenclature si tu ajoutes des mouvements.
-
-3.4. Filtrage et dérivation
-python
-FILTER_CUTOFF_HZ = 6.0       # fréquence de coupure Butterworth
-FILTER_ORDER     = 2         # ordre (filtfilt, donc appliqué 2×)
-EDGE_TRIM_FRAMES = 5         # frames rognées de chaque côté après dérivation
-SWEEP_CUTOFFS_HZ = [2, 3, 4, 5, 6, 8, 10]   # balayage de coupure
-3.5. Gestion des trous et de la qualité
-python
-MAX_GAP_FRAMES   = 10        # trous ≤ 10 frames interpolés linéairement
-MIN_RUN_PCT      = 70.0      # % minimum de frames dans la plus longue séquence
-MAX_INTERP_PCT   = 15.0      # % maximum de frames interpolées toléré
-USE_QC_FOR_MAIN  = False     # exclure les essais QC="check" des résultats
-3.6. Repère local
-python
-REPERE_MODE      = "kabsch"  # "kabsch" (recommandé) ou "m1m2m3"
-BASELINE_FRAMES  = 5         # frames utilisées pour la baseline moyennée
-ALIGN_ORIENTATION = True     # aligner les axes du headband sur le splint
-"kabsch" : ajustement rigide optimal du triangle de référence sur les 3 marqueurs (distribue le bruit sur les 3 points → repère plus stable).
-
-"m1m2m3" : construction stricte (origine M1, X = M1→M2, Z = normale au plan).
-
-3.7. Repère cutané (cross-validation)
-python
-FIXED_THRESHOLD_MM  = 2.5    # seuil d'amplitude pour classer un marqueur "fixe"
-MIN_FIXED_MARKERS   = 10     # nb minimum de marqueurs fixes pour un repère cutané
-MIN_SKIN_FRAMES     = 30     # nb minimum de frames valides pour calculer l'amplitude
-Un marqueur est fixe pour un mouvement donné si son amplitude peak-to-peak médiane dans le repère splint est inférieure à FIXED_THRESHOLD_MM. Seuil recommandé : 1.5 mm pour un repère cutané plus rigide (20/49 sessions valides) ou 2.5 mm pour un repère plus permissif (30/49 sessions valides). Le seuil de 2.5 mm est celui utilisé dans l'article principal.
-
-3.8. Tolérances de stabilité
-python
-TRANSLATION_TOLERANCES_MM = [2.0, 3.0]
-ROTATION_TOLERANCE_DEG    = 2.0
-4. Lancement
-4.1. Pipeline complet (figures + tableaux CSV)
-bash
-python comparaison_repere.py
-Le script parcourt tous les fichiers splint, trouve le headband correspondant, analyse la paire, et produit :
+└── comparaison_repere_V11_reperes faciaux_simplifiee.py
+```
 
-RESULTATS/.../ : tous les CSV de synthèse
+The experimental data and generated results are not included in this repository.
 
-RESULTATS/.../*.png : toutes les figures de l'article
+Recommended local working structure:
 
-Durée estimée : 2–5 minutes pour 49 paires de fichiers à 100 Hz.
+```text
+Validation_diademe/
+│
+├── comparaison_repere_V11_reperes faciaux_simplifiee.py
+├── README.md
+│
+├── DATA/
+│   ├── gouttiere/
+│   │   └── paired Vicon CSV files
+│   │
+│   └── diademe/
+│       └── paired Vicon CSV files
+│
+└── RESULTATS/
+    └── RESULTATS_COMPARAISON_V11_DATADRIVEN/
+        ├── CSV tables
+        └── PNG figures
+```
 
-4.2. Génération du manuscrit Word
-bash
-python generate_article.py
-Le script lit les figures produites et génère le document Word complet dans ~/Downloads/Article_Scientific_Reports_Headband_vs_Splint.docx.
+## 3. Experimental dataset
 
-Important : la photo des dispositifs (Fig01_devices.jpg) n'est pas générée par le pipeline. Elle doit être copiée manuellement dans le dossier RESULTATS/ avant de lancer generate_article.py.
+The study uses simultaneous facial motion capture recordings obtained with both reference systems.
 
-5. Sorties
-5.1. Fichiers CSV
-Fichier	Contenu
-01_Marqueurs_Comparaison.csv	Résultats par marqueur × essai (MAE, RMSE, Pearson, NRMSE, angles, etc.)
-02_Diademe_Stabilite.csv	Dérive du headband dans le repère splint (translation + rotation)
-03_Synthese_par_Mouvement.csv	Synthèse agrégée par mouvement
-04_Synthese_par_Marqueur.csv	Synthèse agrégée par marqueur anatomique
-06_Synthese_Globale_Cinematique.csv	Synthèse globale (moving, static, QC ok)
-07_Stabilite_par_Mouvement.csv	Dérive par mouvement
-08_Stabilite_par_Sujet.csv	Dérive par sujet
-10_Bruit_Statique.csv	Bruit statique (position SD, velocity RMS, acceleration RMS)
-11_Sensibilite_Coupure.csv	Sensibilité des métriques à la fréquence de coupure
-11b_Sensibilite_Coupure_brut.csv	Données brutes du balayage de coupure
-12_Couverture_Marqueurs.csv	Couverture et exclusions par marqueur
-13_Marqueurs_Exclus.csv	Liste détaillée des marqueurs exclus
-14_Rigidite_par_Fichier.csv	Rigidité du triangle par fichier × dispositif
-15_Rigidite_Resume.csv	Résumé de la rigidité par dispositif
-16_Par_Fichier_Moving.csv	Agrégation par fichier (anti pseudo-réplication)
-17_Par_Fichier_Static.csv	Idem, marqueurs statiques
-18_Skin_Fixed_Selection.csv	Liste des marqueurs fixes par session
-19_Skin_Triple_Comparison.csv	Dérive croisée splint/headband dans le repère cutané
-20_Skin_Summary_by_Movement.csv	Synthèse cutanée par mouvement
-Fig_BlandAltman_ROM_stats.csv	Statistiques du Bland-Altman sur la ROM 3D
-5.2. Figures
-Fichier	Description	Figure article
-Fig01_devices.jpg	Photo des dispositifs (à copier manuellement)	Figure 1
-Fig02_NRMSE_by_Movement.png	NRMSE par mouvement	Figure 5
-Fig06_Example_Norms.png	Trajectoire représentative	Figure 7
-Fig08_Static_Noise_G_vs_D.png	Bruit statique splint vs headband	Figure 3
-Fig10_Diadem_Drift_Series.png	Séries temporelles de dérive	Figure 8
-Fig11_Stability_by_Movement.png	Dérive par mouvement	Figure 9
-Fig12_Stability_by_Subject.png	Variabilité inter-sujet	Figure 10
-Fig13_Peaks_vs_Cutoff.png	Pics absolus vs cutoff	Figure 4
-Fig14_Rigidity_Diagnostics.png	Boxplots rigidité	Figure 2
-Fig16_Skin_Drift_Comparison.png	Cross-validation cutanée	Figure 11
-Fig_BlandAltman_ROM.png	Bland-Altman sur la ROM 3D	Figure 6
-Fig01b_BlandAltman_Peaks.png	Bland-Altman sur les pics (supplementary)	S1
-6. Méthodes
-6.1. Construction du repère local
-Deux constructions sont implémentées.
+The two systems are recorded by the same Vicon motion capture system. Consequently, corresponding recordings are synchronized frame by frame and do not require temporal realignment.
 
-Mode m1m2m3 (strict) :
+The dataset used in the study comprises 9 participants and 49 paired trials.
 
-Origine : M1
+### 3.1. Reference markers
 
-Axe X : vecteur unitaire M1 → M2
+Each reference system is defined by three retroreflective markers:
 
-Axe Z : produit vectoriel normalisé X × (M3 − M1)
+| Reference system | Markers | Diameter |
+|---|---|---:|
+| Dental splint | M1, M2, M3 | 5 mm |
+| 3D-printed headband | M1, M2, M3 | 14 mm |
 
-Axe Y : Z × X
+The facial markers have a nominal diameter of 1.5 mm.
 
-Mode kabsch (recommandé) :
+Marker names can be adapted in the configuration section of the Python script through `REF_POINTS_G` and `REF_POINTS_D`.
 
-Un triangle de référence est construit à partir des coordonnées moyennes de M1, M2, M3 sur les BASELINE_FRAMES premières frames valides.
+### 3.2. Facial movements
 
-Pour chaque frame, on estime la transformation rigide (rotation R, translation t) qui ajuste au mieux le triangle de référence sur les positions courantes (SVD, algorithme de Kabsch).
+The current analysis focuses on five standardized facial movements:
 
-Le repère local est défini par cette transformation.
+| Code | Movement |
+|---|---|
+| M1 | Simple eye closure |
+| M2 | Forced eye closure |
+| M3 | Lip protrusion ("o") |
+| M4 | Lip protrusion ("pou") |
+| M5 | Broad smile |
 
-Cette construction distribue le bruit sur les 3 marqueurs au lieu de faire confiance à un seul point d'origine et à un seul axe principal.
+The analysis uses the facial markers shared by the two recordings.
 
-Le mode kabsch est utilisé dans tous les résultats de l'article.
+### 3.3. File naming and pairing
 
-6.2. Baseline correction
-Le déplacement est calculé par rapport à la moyenne des 5 premières frames valides (et non à la première frame seule, comme dans la version V6). Cela retire un décalage constant lié au bruit d'une seule frame, tout en préservant le déplacement dynamique.
+The pipeline automatically searches for the corresponding headband recording for each dental splint recording.
 
-6.3. Filtrage et dérivation
-Filtrage passe-bas Butterworth zéro-phase (filtfilt), ordre 2, coupure 6 Hz par défaut.
+The matching procedure relies on the replacement of the device identifier in the filename:
 
-Dérivation par gradient centré : vitesse = d(position)/dt, accélération = d(vitesse)/dt.
+- `_G_` is replaced by `_D_`
+- `_g_` is replaced by `_d_`
+- Additional replacement patterns are also implemented in the script.
 
-Suppression des bords : EDGE_TRIM_FRAMES frames retirées de chaque côté pour éviter les artefacts de bord du filtre.
+Example:
 
-6.4. Diagnostic de rigidité
-Pour chaque dispositif et chaque session :
+```text
+20260824_G_SMA_M1.csv
+20260824_D_SMA_M1.csv
+```
 
-Distances inter-marqueurs M1-M2, M1-M3, M2-M3 (moyenne et écart-type temporel).
+The two files must correspond to the same participant, movement and acquisition.
 
-Hauteur du triangle par rapport à la base M1-M2.
+The subject and movement identifiers are extracted from the filename. The naming convention must therefore remain consistent across the dataset.
 
-Aire du triangle.
+### 3.4. Vicon CSV format
 
-Kabsch RMSD : RMSD d'ajustement du triangle de référence sur les positions courantes. Mesure directe du bruit de position des marqueurs, indépendante de la géométrie du triangle.
+The script reads Vicon CSV files using the following structure:
 
-Cette séparation entre bruit de marqueur (Kabsch RMSD) et bruit d'orientation (propagé par la géométrie) est le cœur de l'argument de l'article.
+- The first four rows are skipped when loading numerical data.
+- The second line contains the acquisition frequency.
+- The third line contains marker names, using the Vicon `Labelisation_Standard:NAME` convention.
+- Numerical coordinates are read as three columns per marker (X, Y, Z).
 
-6.5. Bruit statique
-Pour chaque dispositif :
+The acquisition frequency is read from the file when available. A default value of 100 Hz is used if it cannot be retrieved.
 
-On identifie les marqueurs qui ne bougent pas pendant un mouvement donné (amplitude < seuil).
+## 4. Software requirements
 
-On calcule leur écart-type de position, RMS de la norme de vitesse, RMS de la norme d'accélération.
+The pipeline uses Python 3.9 or later and the following libraries:
 
-Le ratio headband/splint donne le facteur de réduction du bruit.
+- NumPy
+- pandas
+- SciPy
+- Matplotlib
+- Seaborn
 
-6.6. Balayage de coupure
-Pour chaque cutoff de SWEEP_CUTOFFS_HZ :
+Install the dependencies with:
 
-On recalcule les cinématiques (position, vitesse, accélération).
+```bash
+pip install numpy pandas scipy matplotlib seaborn
+```
 
-On enregistre le pic absolu de chaque norme pour chaque dispositif.
+The script also uses standard Python modules, including `pathlib`.
 
-On calcule le Pearson, le RMSE normalisé, le NRMSE entre splint et headband.
+For reproducibility, the Python version and package versions used for each analysis should be recorded. The repository does not currently provide a pinned dependency file.
 
-Un dispositif dont le pic augmente fortement avec la coupure est dominé par le bruit haute fréquence ; un dispositif dont le pic se stabilise reflète un vrai signal.
+## 5. Configuration
 
-6.7. Cross-validation cutanée
-Pour chaque session :
+All analysis parameters are defined in the `CONFIGURATION` section of the Python script.
 
-Sélection des marqueurs fixes : marqueurs dont l'amplitude peak-to-peak médiane dans le repère splint est inférieure à FIXED_THRESHOLD_MM.
+The main parameters are summarized below.
 
-Construction du repère cutané : Kabsch optimal sur tous les marqueurs fixes (≥ MIN_FIXED_MARKERS).
+| Parameter | V11 value | Description |
+|---|---:|---|
+| `REF_POINTS_G` | M1, M2, M3 | Dental splint reference markers |
+| `REF_POINTS_D` | M1, M2, M3 | Headband reference markers |
+| `FPS_DEFAULT` | 100 Hz | Default acquisition frequency |
+| `REPERE_MODE` | `kabsch` | Reference-frame construction |
+| `BASELINE_FRAMES` | 5 | Frames used for baseline correction |
+| `FILTER_CUTOFF_HZ` | 6 Hz | Default low-pass cutoff |
+| `FILTER_ORDER` | 2 | Butterworth filter order |
+| `EDGE_TRIM_FRAMES` | 5 | Frames removed at each signal edge |
+| `SWEEP_CUTOFFS_HZ` | 2, 3, 4, 5, 6, 8, 10 Hz | Cutoff sensitivity analysis |
+| `MAX_GAP_FRAMES` | 10 | Maximum gap length interpolated |
+| `MIN_RUN_PCT` | 70% | Minimum longest valid run |
+| `MAX_INTERP_PCT` | 15% | Maximum interpolated-frame proportion |
+| `MIN_VALID_FRAMES` | 30 | Minimum valid frames |
+| `AMP_MOVING_FACTOR` | 5 | Noise multiplier for movement classification |
+| `AMP_MOVING_FLOOR_MM` | 1 mm | Minimum movement threshold |
+| `FIXED_THRESHOLD_MM` | 1.5 mm | Threshold for skin-reference marker selection |
+| `MIN_FIXED_MARKERS` | 10 | Minimum markers for skin reference |
+| `MIN_SKIN_FRAMES` | 30 | Minimum valid frames for skin amplitude |
+| `EQUIVALENCE_DELTA_MM` | 2 mm | TOST equivalence margin for displacement range |
+| `ALIGN_ORIENTATION` | `True` | Alignment of headband and splint orientations |
 
-Mesure de la dérive : on exprime le repère splint et le repère headband dans le repère cutané et on mesure leur dérive (translation + rotation).
+### 5.1. Local paths
 
-Ratio headband/splint : si < 1, le headband dérive moins que le splint dans le repère cutané.
+The input and output directories are defined by:
 
-Cette cross-validation est indépendante du splint comme référence (elle utilise les marqueurs faciaux fixes) et permet de trianguler les résultats.
+```python
+DIR_G = Path(r"...\DATA\gouttiere")
+DIR_D = Path(r"...\DATA\diademe")
+OUT = Path(r"...\RESULTATS\RESULTATS_COMPARAISON_V11_DATADRIVEN")
+```
 
-6.8. Bland-Altman
-Deux Bland-Altman sont produits :
+These paths must be adapted to the local computer before running the analysis.
 
-Sur la ROM 3D (figure principale) : differences = ROM_splint − ROM_headband, avec calcul du biais et des limites d'agrément (LoA = biais ± 1.96 × SD).
+## 6. Processing and analysis methods
 
-Sur les pics (supplementary) : même principe appliqué au pic de la norme du déplacement, avec un modèle à effets mixtes (sujet aléatoire + essai imbriqué).
+### 6.1. Reference-frame construction
 
-6.9. Statistiques
-Wilcoxon apparié : comparaison splint vs headband, agrégée par fichier (pas par marqueur) pour éviter la pseudo-réplication.
+The three reference markers M1, M2 and M3 define the local coordinate system for each device.
 
-Kruskal-Wallis : comparaison des NRMSE entre mouvements.
+The recommended configuration is:
 
-Friedman : comparaison des NRMSE entre mouvements, apparié par sujet.
+```python
+REPERE_MODE = "kabsch"
+```
 
-Bland-Altman à effets mixtes : pour les pics, avec statsmodels et repli classique si non-convergence.
+The Kabsch algorithm estimates the rigid transformation that best fits the reference triangle to its observed position at each frame.
 
-7. Reproductibilité
-7.1. Version des dépendances
-Pour reproduire exactement les résultats de l'article, utilise les versions suivantes :
+This approach uses the three reference markers jointly to estimate translation and rotation, rather than relying on a single marker as the origin.
 
-text
-numpy==1.24.3
-pandas==2.0.3
-scipy==1.11.1
-matplotlib==3.7.2
-seaborn==0.12.2
-statsmodels==0.14.0
-python-docx==0.8.11
-7.2. Paramètres exacts
-Les résultats de l'article ont été produits avec :
+The local coordinate systems are used to express facial marker trajectories relative to the corresponding reference device.
 
-text
-FIXED_THRESHOLD_MM = 2.5
-MIN_FIXED_MARKERS  = 10
-REPERE_MODE        = "kabsch"
-BASELINE_FRAMES    = 5
-FILTER_CUTOFF_HZ   = 6.0
-SWEEP_CUTOFFS_HZ   = [2, 3, 4, 5, 6, 8, 10]
-7.3. Vérification
-Pour vérifier que ton installation reproduit les résultats :
+When enabled, `ALIGN_ORIENTATION = True` aligns the mean headband orientation with the dental splint orientation before comparing the kinematic vectors.
 
-Lance comparaison_repere.py.
+### 6.2. Baseline correction
 
-Ouvre 15_Rigidite_Resume.csv : tu dois retrouver
+Facial displacement is calculated relative to the mean position over the first five valid frames.
 
-Splint : aire ≈ 405 mm², Kabsch RMSD ≈ 0.039 mm
+This reduces the influence of single-frame positional variability when defining the initial position.
 
-Headband : aire ≈ 8553 mm², Kabsch RMSD ≈ 0.043 mm
+The baseline correction is applied to displacement signals. Velocity and acceleration are calculated from the filtered trajectories.
 
-Ouvre 20_Skin_Summary_by_Movement.csv : tu dois retrouver
+### 6.3. Filtering and kinematic calculations
 
-Ratio translation D/G ≈ 0.97
+A zero-phase Butterworth low-pass filter is applied to the coordinate trajectories.
 
-Ratio rotation D/G ≈ 0.89
+The default configuration is:
 
-Vérifie que Fig_BlandAltman_ROM.png affiche un biais proche de −0.01 mm et des LoA de [−1.14, +1.13] mm.
+- Cutoff frequency: 6 Hz.
+- Filter order: 2.
+- Zero-phase filtering using `filtfilt`.
 
-Si ces valeurs diffèrent, vérifie les chemins, les noms de marqueurs et les paramètres.
+Velocity and acceleration are calculated using numerical gradients:
 
-8. Limitations connues
-Le repère cutané n'est pas un gold standard absolu : la peau est déformable, et le RMSD d'ajustement médian de 0.77 mm reflète cette compliance intrinsèque.
+\[
+v(t)=\frac{dP(t)}{dt}
+\]
 
-Le seuil de sélection des marqueurs fixes (FIXED_THRESHOLD_MM) est un choix arbitraire. Les résultats ont été vérifiés robustes à 1.5 mm et 2.5 mm (voir Section 6.7 et Supplementary).
+\[
+a(t)=\frac{dv(t)}{dt}
+\]
 
-Le nombre de sessions pour la cross-validation cutanée est limité (30/49 avec un seuil de 2.5 mm, 20/49 avec un seuil de 1.5 mm), ce qui réduit la puissance statistique.
+Five frames are removed at each edge after filtering and differentiation to limit edge-related effects.
 
-Le splint n'est pas un gold standard absolu : il peut micromouvoir pendant les contractions faciales forcées.
+The analysis is performed for:
 
-Le nombre de participants (9) est limité, et les tests inférentiels sont interprétés comme descriptifs plutôt que confirmatoires.
+- Displacement (mm).
+- Velocity (mm/s).
+- Acceleration (mm/s²).
 
-9. Citer ce travail
-Si tu utilises ce code ou ces données dans un travail académique, merci de citer :
+### 6.4. Data-driven classification of facial markers
 
-bibtex
-@article{marcellin2026headband,
-  title   = {Comparative noise characterization of a 3D-printed headband 
-             and a maxillary dental splint as cranial references for 
-             marker-based facial motion capture},
-  author  = {Marcellin, F. and Rodriguez, E. and Raoult, M. and 
-             Le Moing, A.G. and Colin, E. and Sarhan, F.R. and 
-             Dakp{\'e}, S.},
-  journal = {Scientific Reports},
-  year    = {2026},
-  note    = {Code and data available at 
-             https://github.com/FelixMarcellin/Validation_diademe}
-}
-10. Contact
-Pour toute question sur le pipeline, les données ou les résultats :
+Unlike approaches based on a predefined anatomical list of moving markers, V11 classifies markers separately for each trial.
 
-Félix Marcellin — felix.marcellin@u-picardie.fr
+For each facial marker, the amplitude is calculated in the local coordinate system of each device using the median of the coordinate-wise peak-to-peak ranges.
 
-Laboratoire : INSERM UA-21 CHIMERE, Université de Picardie Jules Verne (UPJV), Amiens, France
+The movement threshold is defined as:
 
-Institut : Institut Faire Faces, Amiens, France
+\[
+T_{\mathrm{moving}} =
+\max(5 \times \sigma_{\mathrm{face}}, 1\ \mathrm{mm})
+\]
 
-11. Licence
-Ce code est distribué sous licence MIT (à adapter selon ton choix). Les données brutes ne sont pas incluses dans le dépôt pour des raisons de confidentialité (données de participants humains) ; elles peuvent être obtenues auprès de l'auteur correspondant sur demande raisonnable.
+where \(\sigma_{\mathrm{face}}\) is the estimated facial marker variability used by the pipeline.
 
-Dernière mise à jour : octobre 2026
-Version du pipeline : V9 (seuil cutané 2.5 mm)
+A marker is classified as moving when its amplitude exceeds this threshold in **both** reference systems.
+
+The intersection of the two classifications is used to reduce the risk of identifying movement that appears in only one reference system.
+
+The remaining markers are classified as non-moving by the current implementation. This category should be interpreted cautiously: markers with insufficient valid data may also fall outside the moving classification and should not automatically be considered truly stationary.
+
+The classification and amplitude values are exported for inspection.
+
+### 6.5. Reference-system rigidity
+
+The geometric and temporal stability of each reference triangle are assessed using:
+
+- Inter-marker distances (M1–M2, M1–M3 and M2–M3).
+- Triangle height.
+- Triangle area.
+- Kabsch fitting RMSD.
+
+The inter-marker distances, triangle height and area characterize the geometry of the reference system.
+
+The Kabsch RMSD quantifies the residual discrepancy between the reference triangle and its observed configuration over time.
+
+These measurements provide complementary information about geometric configuration and temporal rigidity.
+
+### 6.6. Relative stability of the two reference systems
+
+The relative transformation between the dental splint and headband is calculated throughout each recording.
+
+The analysis quantifies:
+
+- Relative translation.
+- Translation drift over time.
+- Relative rotation.
+- Rotation drift over time.
+- Translation drift speed.
+
+Translation stability is evaluated using 2 mm and 3 mm descriptive thresholds.
+
+Rotation stability is evaluated using a 2° threshold.
+
+These thresholds are analysis parameters and should not be interpreted as universal clinical acceptance limits.
+
+### 6.7. Skin-based reference analysis
+
+A complementary analysis uses facial markers with low-amplitude trajectories to construct a skin-based reference.
+
+A marker is selected when its amplitude remains below 1.5 mm in both the dental splint and headband reference systems.
+
+At least 10 selected markers are required to construct the skin reference.
+
+The resulting reference is used to estimate the relative motion of the dental splint and headband with respect to the facial skin.
+
+This analysis provides an additional perspective on relative device movement. It is not an independent gold standard: the skin is deformable, and marker selection is based on amplitudes measured in the two device reference frames.
+
+The results must therefore be interpreted as a complementary consistency analysis rather than an absolute validation against an independent reference.
+
+### 6.8. Vectorial comparison of facial kinematics
+
+For each common facial marker and movement, the pipeline compares the kinematic vectors obtained from the two reference systems.
+
+The comparison includes:
+
+- Mean absolute vector error (MAE).
+- Root mean square vector error (RMSE).
+- Maximum vector error.
+- Axis-specific bias and RMSE.
+- Difference between vector magnitudes.
+- Peak magnitude difference.
+- Relative peak error.
+- Normalized RMSE.
+- Pearson correlation between vector magnitudes.
+- Mean, median and maximum angular difference between vectors.
+
+The angular comparison is performed only when both vector magnitudes exceed the minimum thresholds defined for the corresponding kinematic variable.
+
+The reported range of motion (ROM) is calculated as the peak-to-peak range of the displacement magnitude over time:
+
+\[
+ROM = \max(\|P(t)\|)-\min(\|P(t)\|)
+\]
+
+It should therefore be interpreted as the range of the displacement magnitude, rather than as a general three-dimensional anatomical range of motion.
+
+### 6.9. Filter cut-off sensitivity analysis
+
+The pipeline repeats the kinematic calculations using several low-pass filter cut-off frequencies:
+
+```python
+SWEEP_CUTOFFS_HZ = [2, 3, 4, 5, 6, 8, 10]
+```
+
+The purpose is to evaluate how the estimated kinematic quantities vary with filtering choices.
+
+This analysis is particularly relevant for velocity and acceleration, which are more sensitive to high-frequency noise than displacement.
+
+The sensitivity analysis should be interpreted as an assessment of parameter dependence. Stabilization of a peak value alone does not establish that the underlying biological signal has been preserved.
+
+### 6.10. Agreement and statistical analyses
+
+The pipeline includes agreement analyses based on the differences between measurements obtained with the two reference systems.
+
+The Bland–Altman analysis evaluates the bias and limits of agreement for the selected kinematic outcome.
+
+The TOST procedure is configured with an equivalence margin of ±2 mm for the displacement-range outcome.
+
+The equivalence margin is a methodological choice and requires an independent clinical or biomechanical justification before being used to support a claim of interchangeability.
+
+The script also includes paired and movement-related statistical comparisons. The statistical unit must be considered carefully: measurements from multiple markers and trials belonging to the same participant are not independent observations.
+
+For this reason, pooled marker-level results should primarily be interpreted as descriptive unless the statistical model explicitly accounts for the repeated-measures structure.
+
+## 7. Running the pipeline
+
+After configuring the input and output paths, run:
+
+```bash
+python "comparaison_repere_V11_reperes faciaux_simplifiee.py"
+```
+
+The pipeline searches for dental splint recordings, identifies the corresponding headband recordings, loads the paired data and performs the analysis.
+
+The output directory is created or populated at the location specified by `OUT`.
+
+The generated CSV files and figures should be checked after execution, particularly for:
+
+- Missing or unmatched recordings.
+- Missing reference markers.
+- Insufficient valid frames.
+- Marker coverage and exclusions.
+- Quality-control flags.
+- Number of markers classified as moving or non-moving.
+- Availability of a sufficient number of markers for the skin reference.
+
+## 8. Outputs
+
+The pipeline generates tables and figures covering the different stages of the analysis.
+
+The principal output categories are:
+
+| Output category | Information |
+|---|---|
+| Marker-level comparison | Agreement between splint and headband kinematics for each facial marker and trial |
+| Movement-level summaries | Aggregated kinematic agreement for each facial movement |
+| Global kinematic summaries | Displacement, velocity and acceleration comparison |
+| Reference stability | Relative translation and rotation between devices |
+| Subject and movement stability | Distribution of reference drift across participants and movements |
+| Marker classification | Moving/non-moving classification and corresponding amplitudes |
+| Marker coverage | Available markers and exclusions |
+| Static-marker variability | Residual displacement, velocity and acceleration variability |
+| Filter sensitivity | Effect of filter cut-off frequency on kinematic measurements |
+| Reference rigidity | Triangle geometry and Kabsch RMSD |
+| Skin-reference analysis | Selection of low-amplitude facial markers and relative device drift |
+| Bland–Altman analysis | Bias and limits of agreement for selected outcomes |
+
+Figures are generated as PNG files and tables are exported as CSV files. The exact filenames are defined in the current script and should be treated as the authoritative list of outputs.
+
+## 9. Interpretation and limitations
+
+Several methodological considerations are important when interpreting the results.
+
+### 9.1. Sample size and repeated measurements
+
+The study includes a limited number of participants, with multiple trials and facial markers per participant.
+
+The observations are therefore hierarchically structured. A large number of marker-level measurements does not compensate for a limited number of independent participants.
+
+Statistical conclusions should account for this structure, and inferential results should be interpreted cautiously.
+
+### 9.2. Reference-system independence
+
+The dental splint is used as the comparison reference, but it should not be assumed to be perfectly stable.
+
+Small movements of the splint relative to the maxilla may occur during facial contractions.
+
+The study therefore evaluates relative agreement and stability rather than assuming that the dental splint represents an error-free gold standard.
+
+### 9.3. Skin compliance
+
+The skin-based reference is affected by soft-tissue deformation and the availability of sufficiently stable facial markers.
+
+It provides complementary information but cannot be considered an independent absolute reference.
+
+### 9.4. Marker classification
+
+The data-driven classification depends on the estimated marker variability and the selected amplitude thresholds.
+
+Markers classified as non-moving should not automatically be interpreted as physically stationary, particularly when data are missing or insufficient.
+
+### 9.5. Equivalence margin
+
+The ±2 mm equivalence margin is a predefined analysis parameter in V11.
+
+A statistical equivalence result does not, by itself, establish clinical interchangeability. The margin must be justified in relation to the intended application and the magnitude of clinically meaningful facial motion.
+
+### 9.6. Filtering
+
+Kinematic estimates, especially velocity and acceleration, depend on the selected filter cut-off frequency.
+
+The sensitivity analysis is intended to characterize this dependence and should not be interpreted as proof that a particular cut-off perfectly preserves the biological signal.
+
+## 10. Reproducibility
+
+For reproducibility, users should:
+
+1. Use the same Vicon export format.
+2. Preserve the pairing between dental splint and headband recordings.
+3. Verify marker names and reference marker availability.
+4. Record the Python and package versions.
+5. Keep the configuration parameters unchanged when reproducing a specific analysis.
+6. Retain the generated CSV files and figures.
+7. Record any modifications to the analysis script.
+
+The current script contains local directory paths that must be adapted before execution.
+
+The V11 pipeline is the reference implementation in this repository. Results from previous versions should not be assumed to be directly comparable without checking the corresponding processing parameters and analysis methods.
+
+## 11. Citation
+
+If this code is used in an academic publication, please cite the associated study:
+
+Marcellin F, Rodriguez E, Raoult M, Le Moing AG, Colin E, Sarhan FR, Dakpé S.
+
+*Comparative noise characterization of a 3D-printed headband and a maxillary dental splint as cranial references for marker-based facial motion capture.*
+
+The bibliographic information should be updated once the manuscript has been accepted or published.
+
+## 12. Data availability
+
+The raw motion capture recordings are not included in this repository because they contain data collected from human participants.
+
+Access to the data may be requested from the corresponding author, subject to the applicable ethical, regulatory and data-protection requirements.
+
+## 13. Contact
+
+**Félix Marcellin**  
+INSERM UA-21 CHIMERE, Université de Picardie Jules Verne (UPJV), Amiens, France  
+Institut Faire Faces, Amiens, France
+
+GitHub repository:  
+https://github.com/FelixMarcellin/Validation_diademe
+
+---
+
+**Pipeline version:** V11  
+**Main script:** `comparaison_repere_V11_reperes faciaux_simplifiee.py`  
+**Last documentation update:** November 2026
