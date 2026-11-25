@@ -1,222 +1,370 @@
-# A 3D-Printed Headband as a Non-Invasive Cranial Reference for Facial Motion Capture
+# Agreement between a 3D-Printed Headband and a Maxillary Dental Splint for 3D Facial Motion Capture
 
 ## Overview
 
-This repository contains the Python analysis pipeline developed to evaluate a 3D-printed headband as a non-invasive cranial reference system for marker-based facial motion capture.
+This repository contains the Python scripts developed for the processing and statistical analysis of three-dimensional (3D) facial motion capture data acquired using two cranial reference systems:
 
-The study compares facial kinematic measurements obtained simultaneously using two reference systems:
+- A custom-made maxillary dental splint.
+- A 3D-printed external headband.
 
-- **Maxillary dental splint:** a reference system anchored to the upper dentition.
-- **3D-printed headband:** a wearable, non-invasive reference positioned over the fronto-parietal region.
+The objective of the project is to investigate the agreement between these two reference systems for the measurement of facial displacement and kinematic trajectories.
 
-The objective is to assess the extent to which the headband can provide usable facial kinematic measurements compared with the dental splint, while characterizing its geometric properties, temporal stability and measurement agreement.
+The repository contains two main analysis stages:
 
-The dental splint is used as a comparator, not as an error-free ground truth.
+1. **V12.4.1 – Facial motion capture processing:** processing of Vicon acquisitions, reconstruction of the two local reference coordinate systems, and extraction of facial marker trajectories and stability measurements.
+2. **V16.4 – Measurement agreement analysis:** statistical comparison of the headband and dental splint measurements, including repeated-measures Bland–Altman analysis, kinematic agreement and exploratory analyses of measurement discrepancies.
 
-## Study design
+The scripts are intended to support the analyses described in the associated scientific manuscript.
 
-The experimental study included:
-
-- 9 healthy adult participants;
-- 49 paired acquisition trials;
-- 5 standardized facial movements (M1–M5);
-- 105 reflective facial markers;
-- 3 reference markers for each cranial reference system;
-- A 10-camera Vicon optoelectronic motion capture system;
-- A sampling frequency of 100 Hz.
-
-Both reference systems were recorded simultaneously, allowing paired frame-by-frame comparisons under identical acquisition conditions.
-
-## Analysis pipeline
-
-The main analysis script is:
-
-`comparaison_repere_V12_4_1_intra_participant.py`
-
-The pipeline performs the following operations.
-
-### 1. Data import and quality assessment
-
-- Import paired Vicon recordings.
-- Identify corresponding dental-splint and headband acquisitions.
-- Match common facial marker trajectories.
-- Reconstruct short missing trajectory segments using linear interpolation.
-- Identify the longest continuous valid segment for each marker.
-- Apply a minimum trajectory-duration criterion.
-
-All analysable marker–trial observations are retained in the primary kinematic analysis, irrespective of movement amplitude.
-
-### 2. Reconstruction of cranial reference frames
-
-A separate local coordinate system is reconstructed for each device using its three reference markers.
-
-The Kabsch algorithm, based on singular value decomposition, is used to estimate the frame-by-frame rigid transformation.
-
-Facial marker trajectories are then expressed independently in the dental-splint and headband coordinate systems.
-
-### 3. Facial kinematic analysis
-
-The pipeline calculates and compares:
-
-- Three-dimensional displacement;
-- Velocity;
-- Acceleration;
-- Three-dimensional range of motion (ROM);
-- Absolute and normalized errors;
-- Correlation between kinematic signals;
-- Angular deviations.
-
-Trajectories are filtered using a second-order Butterworth low-pass filter with a 6 Hz cutoff frequency. A sensitivity analysis evaluates the influence of alternative cutoff frequencies.
-
-### 4. Reference-system geometry and stability
-
-The geometric properties of each reference-marker triangle are characterized using:
-
-- Inter-marker distances;
-- Triangle height;
-- Triangle area;
-- Temporal variability of inter-marker distances;
-- Kabsch rigid-fit residual RMSD.
-
-Relative translation and rotation between the headband and dental-splint coordinate systems are also evaluated throughout each acquisition.
-
-These measurements quantify relative drift and must not be interpreted as absolute headband movement, since residual movement of the dental splint may also contribute.
-
-### 5. Anatomical and amplitude-dependent analyses
-
-Facial markers are mapped to 32 predefined anatomical zones.
-
-The pipeline provides descriptive analyses of:
-
-- Kinematic agreement across anatomical regions;
-- Right–left comparisons where bilateral anatomical counterparts are available;
-- Movement-specific agreement;
-- Relationships between movement amplitude and measurement error.
-
-Relative agreement metrics are restricted to the secondary subset of jointly moving observations. Absolute error metrics are also reported across the full analysable dataset.
-
-### 6. Statistical analysis
-
-The statistical analyses include:
-
-- Descriptive statistics (median and interquartile range);
-- Bland–Altman analyses;
-- Mixed-effects variance-components models for repeated observations;
-- Two one-sided tests (TOST) for the mean ROM difference;
-- Participant-cluster bootstrap confidence intervals;
-- Sensitivity analyses.
-
-The exploratory ±2 mm TOST margin is an analytical reference value, not a clinically validated acceptance threshold. Equivalence of the mean bias does not establish individual-level interchangeability; the limits of agreement must also be considered.
-
-## Main findings
-
-The results indicate that:
-
-- The headband provides usable displacement-based facial kinematic measurements in the experimental setting.
-- Agreement is generally better for displacement than for velocity and acceleration.
-- Translational stability varies between participants and acquisition trials.
-- The geometric properties of the reference-marker triangle and the coupling of the device to the head are distinct aspects of measurement performance.
-- The available results do not establish individual-level interchangeability with the maxillary dental splint.
-
-Three headband size variants were developed after the acquisitions as a potential design improvement. These variants were not evaluated in the present study.
+---
 
 ## Repository structure
 
-The principal analysis script is:
+The repository is organized around the two main processing and analysis stages:
 
-```text
-comparaison_repere_V12_4_1_intra_participant.py
-```
+| Version | Main purpose |
+|---|---|
+| **V12.4.1** | Processing of Vicon acquisitions and generation of standardized input datasets |
+| **V16.4** | Statistical analysis of measurement agreement |
 
-The analysis generates tables and figures describing the different stages of the validation pipeline, including:
+The main V16.4 script is:
 
-- Global kinematic agreement;
-- Movement-specific comparisons;
-- Anatomical-zone analyses;
-- Reference-system geometry;
-- Relative translation and rotation;
-- Bland–Altman analyses;
-- Intra-participant and intra-movement amplitude–error analyses;
-- Participant-level bootstrap results;
-- Filter sensitivity analyses.
+`V16_4_measurement_agreement.py`
 
-The detailed output filenames are generated by the analysis script.
+The V12.4.1 script generates the intermediate CSV files required by V16.4.
 
-## Requirements
+---
 
-The analysis was developed using Python 3.9.
+# 1. V12.4.1 – Facial motion capture processing
 
-The main scientific Python dependencies are:
+## Purpose
 
-```text
-numpy
-pandas
-scipy
-matplotlib
-seaborn
-```
+V12.4.1 processes the facial motion capture acquisitions and reconstructs facial marker trajectories relative to the two cranial reference systems.
 
-Install the dependencies with:
+The two systems are tracked simultaneously during acquisition, allowing paired measurements to be obtained from the same recording.
+
+The processing pipeline includes:
+
+### 1.1. Acquisition pairing and marker identification
+
+- Identification and pairing of corresponding headband and dental splint acquisitions.
+- Identification of facial markers and reference markers.
+- Synchronization of paired recordings.
+- Selection of common recording periods.
+
+### 1.2. Reconstruction of local coordinate systems
+
+Three reference markers are used for each device to reconstruct its local coordinate system.
+
+The Kabsch algorithm is applied to estimate the rigid transformation between the initial reference configuration and subsequent frames.
+
+Facial marker trajectories are then expressed independently in the headband and dental splint coordinate systems.
+
+### 1.3. Trajectory processing
+
+The processing pipeline includes:
+
+- Identification of missing trajectory segments.
+- Linear interpolation of gaps of up to 10 consecutive frames.
+- Selection of the longest continuous valid segment.
+- Exclusion of trajectories containing fewer than 30 valid consecutive frames.
+- Low-pass filtering using a second-order Butterworth filter with a 6 Hz cutoff frequency.
+- Forward and backward filtering using `filtfilt`.
+- Baseline correction.
+- Removal of five frames at each end of the filtered segment.
+- Calculation of displacement, velocity and acceleration.
+
+### 1.4. Output files
+
+V12.4.1 generates standardized CSV files used by the subsequent statistical analysis.
+
+The two principal files required by V16.4 are:
+
+| File | Description |
+|---|---|
+| `01_Marqueurs_Comparaison.csv` | Paired facial marker measurements reconstructed in the headband and dental splint coordinate systems |
+| `02_Headband_Stabilite.csv` | Relative stability measurements between the two cranial reference systems |
+
+The default output directory used by the processing pipeline is:
+
+`RESULTATS_COMPARAISON_V12_4_1_VALIDATION_ANATOMIQUE`
+
+The two CSV files must be available before running V16.4.
+
+---
+
+# 2. V16.4 – Measurement agreement analysis
+
+## Purpose
+
+V16.4 performs the statistical comparison of facial motion measurements obtained using the two reference systems.
+
+It uses the standardized CSV files generated by V12.4.1 rather than processing the original Vicon acquisitions directly.
+
+The analysis focuses on measurement agreement, not on demonstrating equivalence or interchangeability between the two systems.
+
+## 2.1. Primary outcome: three-dimensional displacement amplitude
+
+The primary outcome is the maximum three-dimensional displacement amplitude of each facial marker.
+
+For each marker and trial, displacement amplitude is calculated independently for both reference systems.
+
+The paired difference is defined as:
+
+**Headband − Dental splint**
+
+A negative value therefore indicates a lower displacement amplitude measured using the headband.
+
+## 2.2. Repeated-measures Bland–Altman analysis
+
+Agreement in displacement amplitude is evaluated using a repeated-measures Bland–Altman approach.
+
+The analysis accounts for the hierarchical structure of the dataset, including:
+
+- Participant-related variability.
+- Trial-related variability.
+- Marker-related variability.
+- Residual measurement variability.
+
+The main outputs include:
+
+- Mean measurement bias.
+- Repeated-measures limits of agreement (LoA).
+- Confidence intervals for the bias and limits of agreement.
+- Bland–Altman plots.
+
+Participant-level bootstrap resampling is used to estimate confidence intervals while preserving the participant-level structure of the dataset.
+
+## 2.3. Movement-specific analysis
+
+Measurement differences are additionally examined across the five standardized facial movements:
+
+- M1: Simple eye closure.
+- M2: Forced eye closure.
+- M3: Lip protrusion (/o/).
+- M4: Lip protrusion (/pu/).
+- M5: Maximal smile with teeth exposed.
+
+Participant-balanced estimates and participant-bootstrap confidence intervals are used to describe movement-specific differences.
+
+These analyses are exploratory and are not interpreted as movement-specific equivalence tests.
+
+## 2.4. Kinematic agreement
+
+The agreement between the two reference systems is also assessed for:
+
+- Three-dimensional displacement.
+- Velocity.
+- Acceleration.
+
+The analysis includes:
+
+- Vector root mean square error (RMSE).
+- Normalized root mean square error (NRMSE).
+- Pearson correlation between signal magnitudes.
+- Additional trajectory-level descriptive measures.
+
+Absolute errors are examined across all analyzable observations, while relative agreement measures are additionally assessed in the subset of markers classified as moving in both systems.
+
+## 2.5. Measurement discrepancy and movement amplitude
+
+The relationship between measurement discrepancy and movement amplitude is investigated using regression models.
+
+Two complementary questions are considered:
+
+- Does the signed difference vary with mean movement amplitude (proportional bias)?
+- Does the absolute measurement discrepancy increase with movement amplitude?
+
+Amplitude-stratified descriptive analyses are also performed.
+
+## 2.6. Relative stability analysis
+
+The relationship between relative motion of the two reference systems and measurement discrepancy is investigated at the trial level.
+
+The analysis considers:
+
+- Maximum relative translational drift.
+- Maximum relative rotational drift.
+- Their association with absolute displacement amplitude differences.
+
+These measurements characterize relative motion between the two devices and cannot identify which reference system is responsible for the observed movement.
+
+## 2.7. Sensitivity analyses
+
+Additional analyses assess the robustness of the primary findings:
+
+- Exclusion of observations flagged by the additional quality-control procedure.
+- Participant-level bootstrap analyses.
+- Leave-one-participant-out analysis.
+- Examination of large measurement discrepancies.
+
+These analyses are intended to characterize the stability of the estimates and are not used to establish equivalence or interchangeability.
+
+## 2.8. Main outputs
+
+V16.4 generates a dedicated results directory containing statistical summaries, CSV tables, figures and analysis logs.
+
+The main outputs include:
+
+- Primary Bland–Altman results.
+- Amplitude discrepancy models.
+- Movement-specific bias estimates.
+- Trial-level summaries.
+- Relative stability association models.
+- Kinematic agreement summaries.
+- Sensitivity analyses.
+- Graphical representations of the principal findings.
+
+The output directory is generated automatically by the script. Its name depends on the version and execution configuration.
+
+---
+
+# 3. Experimental dataset
+
+The analysis described in the associated manuscript is based on the following experimental dataset:
+
+| Characteristic | Value |
+|---|---:|
+| Healthy participants | 10 |
+| Female participants | 6 |
+| Male participants | 4 |
+| Facial movements | 5 |
+| Paired acquisitions | 49 |
+| Facial markers per acquisition | 105 |
+| Potential marker–trial observations | 5,145 |
+| Analyzable marker–trial observations | 4,900 |
+| Analyzable observations | 95.2% |
+
+One acquisition corresponding to maximal smile (M5) was excluded because of a technical recording issue.
+
+The final dataset therefore comprised 10 trials for each of M1–M4 and nine trials for M5.
+
+The kinematic comparison of jointly moving markers included 3,805 observations.
+
+---
+
+# 4. Installation and requirements
+
+The scripts are implemented in Python and use scientific computing libraries for data processing, statistical analysis and visualization.
+
+The main dependencies include:
+
+- Python
+- NumPy
+- Pandas
+- SciPy
+- Matplotlib
+- Seaborn
+- Statsmodels
+
+Additional dependencies may be required depending on the execution environment and the specific script version.
+
+A Python environment containing the required packages should be configured before running the analyses.
+
+Install the dependencies listed in the repository's `requirements.txt` file, if provided.
+
+For example:
 
 ```bash
-pip install numpy pandas scipy matplotlib seaborn
+pip install -r requirements.txt
 ```
 
-## Running the analysis
+---
 
-1. Clone or download this repository.
-2. Install the required Python dependencies.
-3. Prepare the paired Vicon CSV recordings according to the naming convention and input structure expected by the script.
-4. Update the input and output directory paths in the script configuration.
-5. Run the analysis:
+# 5. Running the analysis
 
-```bash
-python comparaison_repere_V12_4_1_intra_participant.py
+The complete workflow consists of two successive stages.
+
+## Step 1 – Run V12.4.1
+
+1. Export the required Vicon acquisitions into the input format expected by the V12.4.1 script.
+2. Configure the input directories for the headband and dental splint acquisitions.
+3. Check the output directory.
+4. Run the V12.4.1 processing script.
+5. Verify that the following files have been generated:
+
+```text
+01_Marqueurs_Comparaison.csv
+02_Headband_Stabilite.csv
 ```
 
-The script will process the paired recordings and generate the corresponding statistical tables and figures in the configured output directory.
+These files are required for the next stage.
 
-**Important:** The input directory structure, file-naming convention and marker labels must be consistent with the configuration expected by the script.
+## Step 2 – Run V16.4
 
-## Data availability
+1. Place the two V12.4.1 CSV files in the input directory expected by V16.4.
+2. Open `V16_4_measurement_agreement.py`.
+3. Check the input and output directory settings.
+4. Select the intended execution configuration.
+5. Run the script.
 
-Raw motion-capture recordings are not included in this repository.
+The script performs the statistical analyses and generates the corresponding output directory containing figures, CSV summaries and analysis logs.
 
-The recordings contain participant-derived motion data and are subject to the applicable ethical and data-protection requirements. Access to the underlying data should be requested from the corresponding author, subject to the relevant institutional and ethical approvals.
+**Important:** V16.4 must be run using the CSV files generated by the corresponding V12.4.1 processing pipeline.
 
-## Limitations
+---
 
-The findings should be interpreted in light of several limitations:
+# 6. Interpretation of the results
 
-- The sample consisted of nine healthy adult participants.
-- The study did not include patients with facial palsy.
-- The dental splint was a comparator rather than an absolute rigid ground truth.
-- Relative device drift cannot be attributed exclusively to the headband.
-- The study was conducted under controlled experimental conditions using standardized facial movements.
-- The three subsequently developed headband sizes were not evaluated.
-- Clinical acceptability thresholds for ROM differences have not yet been established.
+The analysis is designed to characterize agreement between two simultaneously recorded cranial reference systems.
 
-Further studies are required to assess fit, repositioning repeatability, inter-operator reproducibility, comfort and performance across different cranial morphologies and clinical populations.
+The dental splint is used as a comparator because of its mechanical attachment to the maxillary dentition. However, it is not considered an error-free ground truth.
 
-## Reproducibility
+Consequently:
 
-The scripts are provided to document the processing and statistical analyses used in the associated scientific study.
+- A small mean bias does not necessarily imply narrow individual limits of agreement.
+- Correlation does not independently establish agreement.
+- Relative movement cannot be attributed exclusively to the headband.
+- The results do not establish equivalence or interchangeability between the two systems.
+- The findings obtained in healthy volunteers should not be directly generalized to patients with facial nerve disorders.
 
-For reproducibility, the Python version, input data structure, marker configuration and analysis parameters should be kept consistent with those described in the manuscript.
+The statistical analyses should therefore be interpreted in terms of measurement agreement under the experimental conditions investigated.
 
-## Associated publication
+---
 
-**Marcellin F. et al.**
+# 7. Data availability and reproducibility
 
-*A 3D-printed headband as a non-invasive cranial reference for facial motion capture: a comparative evaluation against a maxillary dental splint.*
+The repository provides the processing and statistical analysis scripts associated with the study.
 
-Manuscript submitted to / prepared for **Scientific Reports**.
+The original raw motion capture acquisitions are not included in the public repository. Consequently, complete numerical reproduction of the published results requires access to the corresponding experimental data and the appropriate Vicon exports.
 
-## Contact
+The two-stage processing workflow is documented to facilitate understanding and reuse of the analysis pipeline.
 
-For questions about the analysis pipeline, methodology or the headband design:
+Users wishing to reproduce the study should ensure that:
 
-**Félix Marcellin**  
-INSERM UA-21 CHIMERE, Université de Picardie Jules Verne (UPJV), Amiens, France  
-Institut Faire Faces, Amiens, France  
-Email: felix.marcellin@u-picardie.fr
+- The same acquisition pairing and marker identification procedures are applied.
+- The V12.4.1 processing parameters are maintained.
+- The CSV files generated by V12.4.1 are used as inputs to V16.4.
+- The execution configuration and software environment are documented.
+
+---
+
+# 8. Scientific publication
+
+This repository supports the following scientific work:
+
+**Agreement between a 3D-printed headband and a maxillary dental splint for three-dimensional facial motion capture.**
+
+The study investigates the agreement between an external non-invasive cranial reference system and a maxillary dental splint for the reconstruction of three-dimensional facial movement.
+
+The manuscript reports displacement amplitude agreement as the primary outcome and examines additional kinematic and exploratory measures.
+
+The repository will be updated as the scientific work progresses.
+
+---
+
+# 9. Version history
+
+| Version | Description |
+|---|---|
+| V12.4.1 | Facial motion capture processing, reconstruction of local coordinate systems and generation of standardized comparison and stability datasets |
+| V16.4 | Repeated-measures agreement analysis, Bland–Altman modelling, movement-specific analyses, kinematic comparisons, amplitude discrepancy models and sensitivity analyses |
+
+Earlier development versions are retained in the repository history where applicable.
+
+---
+
+# 10. Contact
+
+For questions regarding the processing pipeline, statistical analyses or scientific application of the scripts, please use the GitHub repository issue tracker.
+
